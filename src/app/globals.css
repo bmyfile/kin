@@ -1,26 +1,100 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+
+  --font-sans: "Inter", var(--font-primary), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #F5F5F5;
+    --foreground: #333333;
+    --card: #FFFFFF;
+    --card-foreground: #111111;
+    --popover: #FFFFFF;
+    --popover-foreground: #111111;
+    --primary: #0F5FFE;
+    --primary-foreground: #FFFFFF;
+    --secondary: #333333;
+    --secondary-foreground: #FFFFFF;
+    --muted: #F2F3F0;
+    --muted-foreground: #5B5F66;
+    --accent: #F2F3F0;
+    --accent-foreground: #111111;
+    --destructive: #A62911;
+    --destructive-foreground: #FFFFFF;
+    --border: #E1E2E5;
+    --input: #9DA4B3;
+    --ring: #E1E2E5;
+    --radius: 0px; 
+    
+    --sidebar: #FFFFFF;
+    --sidebar-foreground: #5B5F66;
+    --sidebar-primary: #0F5FFE;
+    --sidebar-primary-foreground: #002266;
+    --sidebar-accent: #333333;
+    --sidebar-accent-foreground: #F5F5F5;
+    --sidebar-border: #E1E2E5;
+    --sidebar-ring: #E1E2E5;
+
+    --success: #DDF0C9;
+    --success-foreground: #1A3300;
+    --warning: #F5E6D7;
+    --warning-foreground: #663300;
+    --info: #C9D6F0;
+    --info-foreground: #001133;
+    --error: #F5D7F3;
+    --error-foreground: #66005E;
+
+    --font-primary: "Roboto", sans-serif;
+    --font-secondary: "Roboto Mono", monospace;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }
