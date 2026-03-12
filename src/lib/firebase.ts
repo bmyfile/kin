@@ -11,18 +11,24 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase only if it hasn't been initialized already
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+// Initialize Firebase only if it hasn't been initialized already and we have a config
+const app = getApps().length === 0 
+  ? (firebaseConfig.apiKey ? initializeApp(firebaseConfig) : null) 
+  : getApps()[0];
 
-export const auth = getAuth(app);
+export const auth = app ? getAuth(app) : ({} as any);
 
 // Persist auth state so re-auth is faster on page reload (browser only)
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && app) {
   setPersistence(auth, browserLocalPersistence);
 }
 
 // Firestore with persistent local cache for faster loading
-export const db = initializeFirestore(app, {
+export const db = app ? initializeFirestore(app, {
   localCache: persistentLocalCache(),
-});
+}) : ({} as any);
+
+if (!firebaseConfig.apiKey) {
+  console.warn("Firebase configuration is missing. This is expected during build time if environment variables are not set, but required for runtime.");
+}
 
