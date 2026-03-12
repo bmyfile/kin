@@ -167,7 +167,6 @@ export default function FundsPage() {
     return () => window.removeEventListener("beforeunload", handler)
   }, [isDirty])
 
-  // Navigation guard
   const handleNavigation = (href: string) => {
     if (isDirty) {
       pendingNavRef.current = href

@@ -15,8 +15,11 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 export const auth = getAuth(app);
-// Persist auth state so re-auth is faster on page reload
-setPersistence(auth, browserLocalPersistence);
+
+// Persist auth state so re-auth is faster on page reload (browser only)
+if (typeof window !== "undefined") {
+  setPersistence(auth, browserLocalPersistence);
+}
 
 // Firestore with persistent local cache for faster loading
 export const db = initializeFirestore(app, {
