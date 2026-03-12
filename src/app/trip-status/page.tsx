@@ -48,7 +48,7 @@ export default function TripStatusPage() {
   // Filters
   const currentYear = new Date().getFullYear()
   const [selectedYear, setSelectedYear] = useState(currentYear)
-  const [selectedHalf, setSelectedHalf] = useState<"상반기" | "하반기">("상반기")
+  const [selectedHalf, setSelectedHalf] = useState<"상반기" | "하반기" | "상하반기">("상반기")
 
   const fetchData = useCallback(async () => {
     try {
@@ -93,6 +93,7 @@ export default function TripStatusPage() {
       const year = parseInt(t.date.substring(0, 4))
       const month = parseInt(t.date.substring(5, 7))
       if (year !== selectedYear) return false
+      if (selectedHalf === "상하반기") return true
       if (selectedHalf === "상반기") return month >= 1 && month <= 6
       return month >= 7 && month <= 12
     })
@@ -149,11 +150,12 @@ export default function TripStatusPage() {
               <span className="text-xs text-[#9DA4B3]">구분</span>
               <select
                 value={selectedHalf}
-                onChange={(e) => setSelectedHalf(e.target.value as "상반기" | "하반기")}
+                onChange={(e) => setSelectedHalf(e.target.value as "상반기" | "하반기" | "상하반기")}
                 className="h-10 px-4 border border-[#E1E2E5] bg-white text-sm text-[#333] focus:outline-none cursor-pointer"
               >
                 <option value="상반기">상반기</option>
                 <option value="하반기">하반기</option>
+                <option value="상하반기">상하반기</option>
               </select>
             </div>
             <Button
