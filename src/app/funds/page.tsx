@@ -5,7 +5,6 @@ import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { collection, doc, getDocs, setDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { AppLayout } from "@/components/layout/app-layout"
@@ -21,26 +20,44 @@ type MonthData = {
 
 type FundsData = {
   year: number
-  categories: string[] // category names
-  months: { [month: string]: MonthData } // "1"~"12"
-  subsidies: { [categoryId: string]: number } // 지원금 per category
+  categories: string[]
+  months: { [month: string]: MonthData }
+  subsidies: { [categoryId: string]: number }
 }
 
-// ── Memo Modal ───────────────────────────────────────
-function MemoModal({
+type TripForFunds = {
+  id: string
+  name: string
+  date: string
+  fundAllocations: { category: string; amount: number }[]
+}
+
+type CellTripDetail = {
+  tripId: string
+  tripName: string
+  tripDate: string
+  amount: number
+}
+
+// ── Cell Detail Modal ────────────────────────────────
+function CellDetailModal({
   isOpen,
   onClose,
   month,
   category,
+  tripDetails,
+  totalAmount,
   memo,
-  onSave,
+  onSaveMemo,
 }: {
   isOpen: boolean
   onClose: () => void
   month: number
   category: string
+  tripDetails: CellTripDetail[]
+  totalAmount: number
   memo: string
-  onSave: (memo: string) => void
+  onSaveMemo: (memo: string) => void
 }) {
   const [text, setText] = useState(memo)
 
@@ -50,31 +67,75 @@ function MemoModal({
 
   return (
     <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-[480px] p-8 flex flex-col gap-4">
+      <div className="bg-white rounded-xl shadow-xl w-[480px] p-8 flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-[#333]">
-            메모 ({month}월)
+            {month}월 - {category}
           </h3>
           <button onClick={onClose} className="text-[#9DA4B3] hover:text-[#333] cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
-        <p className="text-sm text-[#9DA4B3]">
-          해당 월의 사업체 지원 내역에 대한 메모를 확인/작성하세요.
-        </p>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          className="w-full h-40 p-4 border border-[#E1E2E5] text-sm text-[#333] resize-none focus:outline-none focus:ring-1 focus:ring-[#333]"
-          placeholder={`${month}월 ${category} 관련 메모를 입력하세요...`}
-        />
+
+        {/* Trip list */}
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-[#5B5F66]">체험학습 내역</span>
+          {tripDetails.length === 0 ? (
+            <p className="text-sm text-[#9DA4B3] py-3 text-center border border-dashed border-[#E1E2E5] rounded">
+              이 월에 해당 항목의 배정된 체험학습이 없습니다.
+            </p>
+          ) : (
+            <div className="border border-[#E1E2E5] rounded overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#F9F9F9] border-b border-[#E1E2E5]">
+                    <th className="text-left px-3 py-2 font-medium text-[#5B5F66]">체험학습명</th>
+                    <th className="text-center px-3 py-2 font-medium text-[#5B5F66] w-[90px]">날짜</th>
+                    <th className="text-right px-3 py-2 font-medium text-[#5B5F66] w-[100px]">금액</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tripDetails.map((td) => (
+                    <tr key={td.tripId} className="border-b border-[#E1E2E5] last:border-b-0">
+                      <td className="px-3 py-2 text-[#333]">{td.tripName}</td>
+                      <td className="px-3 py-2 text-center text-[#5B5F66]">
+                        {td.tripDate ? td.tripDate.slice(5).replace("-", ".") : "-"}
+                      </td>
+                      <td className="px-3 py-2 text-right text-[#333]">
+                        {td.amount.toLocaleString()}원
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="flex items-center justify-between px-3 py-2 bg-[#F9F9F9] border-t border-[#E1E2E5]">
+                <span className="text-sm font-medium text-[#5B5F66]">합계</span>
+                <span className="text-sm font-semibold text-[#333]">
+                  {totalAmount.toLocaleString()}원
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Memo */}
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-[#5B5F66]">메모</span>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            className="w-full h-28 p-3 border border-[#E1E2E5] text-sm text-[#333] resize-none focus:outline-none focus:ring-1 focus:ring-[#333] rounded"
+            placeholder={`${month}월 ${category} 관련 메모를 입력하세요...`}
+          />
+        </div>
+
         <div className="flex justify-end gap-3">
           <Button
             type="button"
             className="bg-[#2563EB] hover:bg-[#1d4ed8] text-white px-6 cursor-pointer"
-            onClick={() => { onSave(text); onClose() }}
+            onClick={() => { onSaveMemo(text); onClose() }}
           >
-            + 저장
+            저장
           </Button>
           <Button
             type="button"
@@ -82,7 +143,7 @@ function MemoModal({
             className="px-6 cursor-pointer"
             onClick={onClose}
           >
-            + 닫기
+            닫기
           </Button>
         </div>
       </div>
@@ -97,6 +158,7 @@ export default function FundsPage() {
   const [categories, setCategories] = useState<string[]>(["현장학습비", "숲체험비"])
   const [monthsData, setMonthsData] = useState<{ [month: string]: MonthData }>({})
   const [subsidies, setSubsidies] = useState<{ [cat: string]: number }>({})
+  const [trips, setTrips] = useState<TripForFunds[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
@@ -106,19 +168,57 @@ export default function FundsPage() {
   const pendingNavRef = useRef<string | null>(null)
   const router = useRouter()
 
-  // Memo modal state
-  const [memoOpen, setMemoOpen] = useState(false)
-  const [memoMonth, setMemoMonth] = useState(1)
-  const [memoCat, setMemoCat] = useState("")
+  // Cell detail modal state
+  const [cellModalOpen, setCellModalOpen] = useState(false)
+  const [cellModalMonth, setCellModalMonth] = useState(1)
+  const [cellModalCat, setCellModalCat] = useState("")
 
   const docId = `funds-${selectedYear}`
 
-  // Load data
+  // ── Aggregated trip data ──────────────────────────
+  const aggregatedAmounts = useMemo(() => {
+    const result: { [month: string]: { [cat: string]: number } } = {}
+    for (const trip of trips) {
+      if (!trip.date) continue
+      const month = String(new Date(trip.date).getMonth() + 1)
+      if (!result[month]) result[month] = {}
+      for (const alloc of trip.fundAllocations || []) {
+        result[month][alloc.category] = (result[month][alloc.category] || 0) + alloc.amount
+      }
+    }
+    return result
+  }, [trips])
+
+  const cellTripDetails = useMemo(() => {
+    const result: { [key: string]: CellTripDetail[] } = {}
+    for (const trip of trips) {
+      if (!trip.date) continue
+      const month = String(new Date(trip.date).getMonth() + 1)
+      for (const alloc of trip.fundAllocations || []) {
+        const key = `${month}-${alloc.category}`
+        if (!result[key]) result[key] = []
+        result[key].push({
+          tripId: trip.id,
+          tripName: trip.name,
+          tripDate: trip.date,
+          amount: alloc.amount,
+        })
+      }
+    }
+    return result
+  }, [trips])
+
+  // ── Load data ─────────────────────────────────────
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const snap = await getDocs(collection(db, "funds"))
-      const found = snap.docs.find((d) => d.id === docId)
+      const [fundsSnap, tripsSnap] = await Promise.all([
+        getDocs(collection(db, "funds")),
+        getDocs(collection(db, "trips")),
+      ])
+
+      // Funds doc (categories, subsidies, memos)
+      const found = fundsSnap.docs.find((d) => d.id === docId)
       if (found) {
         const data = found.data() as FundsData
         setCategories(data.categories || ["현장학습비", "숲체험비"])
@@ -129,23 +229,48 @@ export default function FundsPage() {
         setMonthsData({})
         setSubsidies({})
       }
+
+      // Trips for selected year
+      const allTrips: TripForFunds[] = tripsSnap.docs.map((d) => ({
+        id: d.id,
+        name: d.data().name || "",
+        date: d.data().date || "",
+        fundAllocations: (d.data().fundAllocations || []).map((f: { category: string; amount: number }) => ({
+          category: f.category,
+          amount: Number(f.amount) || 0,
+        })),
+      }))
+      setTrips(allTrips.filter((t) => {
+        if (!t.date) return false
+        return new Date(t.date).getFullYear() === selectedYear
+      }))
     } catch (err) {
       console.error("Error fetching funds:", err)
     } finally {
       setLoading(false)
     }
-  }, [docId])
+  }, [docId, selectedYear])
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // Save data
+  // ── Save data ─────────────────────────────────────
   const saveData = useCallback(async () => {
     setSaving(true)
     try {
+      // Only persist memos (amount: 0)
+      const memosOnly: { [month: string]: MonthData } = {}
+      for (const [month, cats] of Object.entries(monthsData)) {
+        for (const [cat, data] of Object.entries(cats)) {
+          if (data.memo) {
+            if (!memosOnly[month]) memosOnly[month] = {}
+            memosOnly[month][cat] = { amount: 0, memo: data.memo }
+          }
+        }
+      }
       await setDoc(doc(db, "funds", docId), {
         year: selectedYear,
         categories,
-        months: monthsData,
+        months: memosOnly,
         subsidies,
       })
     } catch (err) {
@@ -167,15 +292,6 @@ export default function FundsPage() {
     return () => window.removeEventListener("beforeunload", handler)
   }, [isDirty])
 
-  const handleNavigation = (href: string) => {
-    if (isDirty) {
-      pendingNavRef.current = href
-      setShowUnsavedModal(true)
-    } else {
-      router.push(href)
-    }
-  }
-
   const handleSaveAndNavigate = async () => {
     await saveData()
     setIsDirty(false)
@@ -187,19 +303,6 @@ export default function FundsPage() {
     setIsDirty(false)
     setShowUnsavedModal(false)
     if (pendingNavRef.current) router.push(pendingNavRef.current)
-  }
-
-  // Update amount
-  const updateAmount = (month: number, cat: string, value: string) => {
-    const numVal = parseInt(value.replace(/,/g, "")) || 0
-    setIsDirty(true)
-    setMonthsData((prev) => ({
-      ...prev,
-      [month]: {
-        ...prev[month],
-        [cat]: { ...(prev[month]?.[cat] || { amount: 0, memo: "" }), amount: numVal },
-      },
-    }))
   }
 
   // Update memo
@@ -237,9 +340,12 @@ export default function FundsPage() {
     setCategories((prev) => prev.filter((c) => c !== cat))
   }
 
-  // Calculations
-  const getAmount = (month: number, cat: string) => monthsData[month]?.[cat]?.amount || 0
-  const getMemo = (month: number, cat: string) => monthsData[month]?.[cat]?.memo || ""
+  // ── Calculations (from aggregated trip data) ──────
+  const getAmount = (month: number, cat: string) =>
+    aggregatedAmounts[String(month)]?.[cat] || 0
+
+  const getMemo = (month: number, cat: string) =>
+    monthsData[month]?.[cat]?.memo || ""
 
   const getCategoryTotal = (cat: string) => {
     let sum = 0
@@ -271,7 +377,7 @@ export default function FundsPage() {
         <div className="px-8 pt-8">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-[24px] font-bold text-[#333] tracking-tight">
-              사업체 지원금 현황 및 입력 (연간)
+              사업체 지원금 현황 (연간)
             </h1>
             <div className="flex items-center gap-3">
               <select
@@ -297,7 +403,6 @@ export default function FundsPage() {
         {/* Table */}
         <div className="px-8 pb-8">
           {categories.length === 0 ? (
-            /* ── Empty State ── */
             <div className="flex flex-col items-center justify-center py-24 bg-white border-2 border-dashed border-[#E1E2E5] rounded-xl">
               <div className="text-5xl mb-4">📋</div>
               <h3 className="text-lg font-semibold text-[#333] mb-2">등록된 지원금 항목이 없습니다</h3>
@@ -361,30 +466,30 @@ export default function FundsPage() {
                         <td className="text-center text-sm text-[#333] bg-[#F9F9F9] border-r border-[#E1E2E5] w-[60px] h-[48px]">
                           {month}
                         </td>
-                        {categories.map((cat) => (
-                          <td key={cat} className="border-r border-[#E1E2E5] w-[220px] h-[48px] p-[6px]">
-                            <div className="flex items-center gap-[6px]">
-                              <Input
-                                type="text"
-                                value={getAmount(month, cat) ? getAmount(month, cat).toLocaleString() : ""}
-                                onChange={(e) => updateAmount(month, cat, e.target.value)}
-                                placeholder="0"
-                                className="h-[36px] text-sm text-right flex-1"
-                              />
-                              <button
-                                onClick={() => {
-                                  setMemoMonth(month)
-                                  setMemoCat(cat)
-                                  setMemoOpen(true)
-                                }}
-                                className="border border-[#E1E2E5] px-2 py-1 text-sm hover:bg-gray-50 cursor-pointer shrink-0"
-                                title="메모"
-                              >
-                                📝
-                              </button>
-                            </div>
-                          </td>
-                        ))}
+                        {categories.map((cat) => {
+                          const amount = getAmount(month, cat)
+                          const hasMemo = !!getMemo(month, cat)
+                          return (
+                            <td
+                              key={cat}
+                              className="border-r border-[#E1E2E5] w-[220px] h-[48px] p-[6px] cursor-pointer hover:bg-[#F5F8FF] transition-colors"
+                              onClick={() => {
+                                setCellModalMonth(month)
+                                setCellModalCat(cat)
+                                setCellModalOpen(true)
+                              }}
+                            >
+                              <div className="flex items-center justify-between px-2 h-full">
+                                <span className="text-sm text-right flex-1 text-[#333]">
+                                  {amount ? `₩ ${amount.toLocaleString()}` : "-"}
+                                </span>
+                                {hasMemo && (
+                                  <span className="w-2 h-2 rounded-full bg-[#2563EB] shrink-0 ml-2" title="메모 있음" />
+                                )}
+                              </div>
+                            </td>
+                          )
+                        })}
                       </tr>
                     ))}
 
@@ -523,16 +628,18 @@ export default function FundsPage() {
       document.getElementById('modal-root')!
     )}
 
-    {/* Memo Modal — Portal to #modal-root */}
-    {typeof window !== 'undefined' && memoOpen && createPortal(
+    {/* Cell Detail Modal — Portal to #modal-root */}
+    {typeof window !== 'undefined' && cellModalOpen && createPortal(
       <div className="fixed inset-0 z-[99999] pointer-events-auto">
-        <MemoModal
-          isOpen={memoOpen}
-          onClose={() => setMemoOpen(false)}
-          month={memoMonth}
-          category={memoCat}
-          memo={getMemo(memoMonth, memoCat)}
-          onSave={(text: string) => updateMemo(memoMonth, memoCat, text)}
+        <CellDetailModal
+          isOpen={cellModalOpen}
+          onClose={() => setCellModalOpen(false)}
+          month={cellModalMonth}
+          category={cellModalCat}
+          tripDetails={cellTripDetails[`${cellModalMonth}-${cellModalCat}`] || []}
+          totalAmount={getAmount(cellModalMonth, cellModalCat)}
+          memo={getMemo(cellModalMonth, cellModalCat)}
+          onSaveMemo={(text: string) => updateMemo(cellModalMonth, cellModalCat, text)}
         />
       </div>,
       document.getElementById('modal-root')!

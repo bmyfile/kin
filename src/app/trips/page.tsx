@@ -6,12 +6,13 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Plus, X, Trash2 } from "lucide-react"
-import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc } from "firebase/firestore"
+import { collection, addDoc, getDocs, getDoc, deleteDoc, doc, updateDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { AppLayout } from "@/components/layout/app-layout"
 
 // ── Types ────────────────────────────────────────────
 type CostItem = { name: string; total: number; perChild: number }
+type FundAllocation = { category: string; amount: number }
 
 type Trip = {
   id: string
@@ -19,6 +20,8 @@ type Trip = {
   date: string
   costItems: CostItem[]
   participants: string[] // student IDs
+  parentPayment: number
+  fundAllocations: FundAllocation[]
 }
 
 type Student = { id: string; name: string; age: string }
@@ -27,12 +30,14 @@ type Student = { id: string; name: string; age: string }
 function TripModal({
   open,
   trip,
+  trips,
   students,
   onClose,
   onSave,
 }: {
   open: boolean
   trip: Trip | null
+  trips: Trip[]
   students: Student[]
   onClose: () => void
   onSave: (data: Omit<Trip, "id">) => Promise<void>
@@ -42,6 +47,10 @@ function TripModal({
   const [costItems, setCostItems] = useState<CostItem[]>([{ name: "", total: 0, perChild: 0 }])
   const [selectedStudents, setSelectedStudents] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  const [parentPayment, setParentPayment] = useState(0)
+  const [fundAllocations, setFundAllocations] = useState<FundAllocation[]>([])
+  const [fundCategories, setFundCategories] = useState<string[]>([])
+  const [fundBalances, setFundBalances] = useState<{ [cat: string]: number }>({})
 
   useEffect(() => {
     if (open) {
@@ -51,8 +60,45 @@ function TripModal({
         trip?.costItems?.length ? [...trip.costItems] : [{ name: "", total: 0, perChild: 0 }]
       )
       setSelectedStudents(trip?.participants || [])
+      setParentPayment(trip?.parentPayment || 0)
+      setFundAllocations(trip?.fundAllocations?.length ? [...trip.fundAllocations] : [])
     }
   }, [open, trip])
+
+  // Fetch fund categories and balances based on trip date year
+  useEffect(() => {
+    if (!open) return
+    const year = date ? new Date(date).getFullYear() : new Date().getFullYear()
+    if (isNaN(year)) return
+    const fundsDocId = `funds-${year}`
+    getDoc(doc(db, "funds", fundsDocId)).then((snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as {
+          categories: string[]
+          subsidies: { [cat: string]: number }
+        }
+        setFundCategories(data.categories || [])
+        // Calculate balances from trip allocations (excluding current trip)
+        const balances: { [cat: string]: number } = {}
+        for (const cat of data.categories || []) {
+          let totalAllocated = 0
+          for (const t of trips) {
+            if (trip && t.id === trip.id) continue
+            if (!t.date) continue
+            if (new Date(t.date).getFullYear() !== year) continue
+            for (const alloc of t.fundAllocations || []) {
+              if (alloc.category === cat) totalAllocated += alloc.amount
+            }
+          }
+          balances[cat] = (data.subsidies?.[cat] || 0) - totalAllocated
+        }
+        setFundBalances(balances)
+      } else {
+        setFundCategories([])
+        setFundBalances({})
+      }
+    }).catch(console.error)
+  }, [open, date, trips, trip])
 
   if (!open) return null
 
@@ -112,11 +158,37 @@ function TripModal({
     }
   }
 
+  // Budget helpers
+  const addFundAllocation = () => {
+    if (fundCategories.length === 0) return
+    const usedCats = fundAllocations.map((f) => f.category)
+    const available = fundCategories.filter((c) => !usedCats.includes(c))
+    if (available.length === 0) return
+    setFundAllocations([...fundAllocations, { category: available[0], amount: 0 }])
+  }
+
+  const removeFundAllocation = (i: number) => {
+    setFundAllocations(fundAllocations.filter((_, idx) => idx !== i))
+  }
+
+  const updateFundAllocation = (i: number, field: "category" | "amount", value: string | number) => {
+    const items = [...fundAllocations]
+    if (field === "category") {
+      items[i].category = value as string
+    } else {
+      items[i].amount = Number(String(value).replace(/,/g, "")) || 0
+    }
+    setFundAllocations(items)
+  }
+
+  const totalBudget = parentPayment + fundAllocations.reduce((s, f) => s + f.amount, 0)
+  const budgetDifference = totalBudget - totalCost
+
   const handleSubmit = async () => {
     if (!name.trim() || !date) return
     setSaving(true)
     try {
-      await onSave({ name: name.trim(), date, costItems, participants: selectedStudents })
+      await onSave({ name: name.trim(), date, costItems, participants: selectedStudents, parentPayment, fundAllocations })
       onClose()
     } catch {
       window.alert("저장 중 오류가 발생했습니다.")
@@ -230,6 +302,101 @@ function TripModal({
             </div>
           </div>
 
+          {/* Budget */}
+          <div className="flex flex-col gap-3">
+            <span className="text-sm font-medium text-[#333]">예산</span>
+
+            {/* 학부모 납부액 */}
+            <div className="flex flex-col gap-[6px]">
+              <span className="text-xs text-[#9DA4B3]">학부모 납부액</span>
+              <Input
+                type="text"
+                placeholder="0"
+                value={parentPayment ? parentPayment.toLocaleString() : ""}
+                onChange={(e) => setParentPayment(Number(e.target.value.replace(/,/g, "")) || 0)}
+                className="h-10 rounded-none border-[#9DA4B3] text-right"
+              />
+            </div>
+
+            {/* 사업비 */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[#9DA4B3]">사업비</span>
+                <button
+                  type="button"
+                  onClick={addFundAllocation}
+                  disabled={fundCategories.length === 0 || fundAllocations.length >= fundCategories.length}
+                  className="text-xs px-2 py-1 border border-[#E1E2E5] rounded text-[#333] hover:bg-[#F5F5F5] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  사업비 추가
+                </button>
+              </div>
+              {fundAllocations.length === 0 && fundCategories.length > 0 && (
+                <span className="text-xs text-[#9DA4B3]">사업비를 추가하여 예산을 배정하세요.</span>
+              )}
+              {fundCategories.length === 0 && (
+                <span className="text-xs text-[#9DA4B3]">등록된 사업비 항목이 없습니다.</span>
+              )}
+              {fundAllocations.map((alloc, i) => {
+                const balance = fundBalances[alloc.category] ?? 0
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <select
+                      value={alloc.category}
+                      onChange={(e) => updateFundAllocation(i, "category", e.target.value)}
+                      className="h-10 flex-1 px-2 border border-[#9DA4B3] text-sm text-[#333] bg-white focus:outline-none"
+                    >
+                      {fundCategories.map((cat) => (
+                        <option
+                          key={cat}
+                          value={cat}
+                          disabled={fundAllocations.some((f, idx) => idx !== i && f.category === cat)}
+                        >
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                    <span className={`text-xs whitespace-nowrap w-[90px] text-right ${balance >= 0 ? "text-[#2563EB]" : "text-[#E83838]"}`}>
+                      잔액: {balance.toLocaleString()}
+                    </span>
+                    <Input
+                      type="text"
+                      placeholder="0"
+                      value={alloc.amount ? alloc.amount.toLocaleString() : ""}
+                      onChange={(e) => updateFundAllocation(i, "amount", e.target.value)}
+                      className="w-[100px] h-10 rounded-none border-[#9DA4B3] text-right"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeFundAllocation(i)}
+                      className="w-8 h-8 flex items-center justify-center border border-[#E1E2E5] rounded text-[#9DA4B3] hover:text-[#E83838] hover:border-[#FFE5E5] cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Budget Summary */}
+            <div className="flex flex-col gap-1 pt-3 border-t border-[#E1E2E5]">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[#9DA4B3]">총 비용</span>
+                <span className="text-sm text-[#333]">{totalCost.toLocaleString()}원</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[#9DA4B3]">총 예산</span>
+                <span className="text-sm text-[#333]">{totalBudget.toLocaleString()}원</span>
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-dashed border-[#E1E2E5]">
+                <span className="text-xs font-medium text-[#333]">차액 (예산 - 비용)</span>
+                <span className={`text-sm font-semibold ${budgetDifference >= 0 ? "text-[#2563EB]" : "text-[#E83838]"}`}>
+                  {budgetDifference >= 0 ? "+" : ""}{budgetDifference.toLocaleString()}원
+                </span>
+              </div>
+            </div>
+          </div>
+
           {/* Participants */}
           <div className="flex flex-col gap-2">
             <span className="text-sm font-medium text-[#333]">참여 아동 선택</span>
@@ -332,6 +499,11 @@ export default function TripsPage() {
         date: d.data().date || "",
         costItems: d.data().costItems || [],
         participants: d.data().participants || [],
+        parentPayment: Number(d.data().parentPayment) || 0,
+        fundAllocations: (d.data().fundAllocations || []).map((f: { category: string; amount: number }) => ({
+          category: f.category,
+          amount: Number(f.amount) || 0,
+        })),
       }))
       tripsData.sort((a, b) => b.date.localeCompare(a.date)) // 최신 순
 
@@ -499,6 +671,7 @@ export default function TripsPage() {
       <TripModal
         open={modalOpen}
         trip={editingTrip}
+        trips={trips}
         students={students}
         onClose={() => setModalOpen(false)}
         onSave={handleSave}

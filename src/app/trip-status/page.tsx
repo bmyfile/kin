@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { collection, getDocs } from "firebase/firestore"
+import { collection, doc, getDoc, getDocs } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { AppLayout } from "@/components/layout/app-layout"
 
 // ── Types ────────────────────────────────────────────
 type CostItem = { name: string; total: number; perChild: number }
+type FundAllocation = { category: string; amount: number }
 
 type Trip = {
   id: string
@@ -15,6 +16,8 @@ type Trip = {
   date: string
   costItems: CostItem[]
   participants: string[]
+  parentPayment: number
+  fundAllocations: FundAllocation[]
 }
 
 type Student = { id: string; name: string; age: string }
@@ -43,6 +46,7 @@ function SummaryCard({
 export default function TripStatusPage() {
   const [trips, setTrips] = useState<Trip[]>([])
   const [students, setStudents] = useState<Student[]>([])
+  const [totalSubsidies, setTotalSubsidies] = useState(0)
   const [loading, setLoading] = useState(true)
 
   // Filters
@@ -52,9 +56,10 @@ export default function TripStatusPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [tripsSnap, studentsSnap] = await Promise.all([
+      const [tripsSnap, studentsSnap, fundsSnap] = await Promise.all([
         getDocs(collection(db, "trips")),
         getDocs(collection(db, "students")),
+        getDoc(doc(db, "funds", `funds-${selectedYear}`)),
       ])
 
       const tripsData = tripsSnap.docs.map((d) => ({
@@ -63,6 +68,11 @@ export default function TripStatusPage() {
         date: d.data().date || "",
         costItems: d.data().costItems || [],
         participants: d.data().participants || [],
+        parentPayment: Number(d.data().parentPayment) || 0,
+        fundAllocations: (d.data().fundAllocations || []).map((f: { category: string; amount: number }) => ({
+          category: f.category,
+          amount: Number(f.amount) || 0,
+        })),
       }))
       tripsData.sort((a, b) => a.date.localeCompare(b.date))
 
@@ -73,6 +83,20 @@ export default function TripStatusPage() {
       }))
       studentsData.sort((a, b) => a.name.localeCompare(b.name))
 
+      // Total subsidies from funds doc (only for known categories)
+      if (fundsSnap.exists()) {
+        const data = fundsSnap.data()
+        const cats: string[] = data.categories || []
+        const subs = data.subsidies || {}
+        let total = 0
+        for (const cat of cats) {
+          total += Number(subs[cat]) || 0
+        }
+        setTotalSubsidies(total)
+      } else {
+        setTotalSubsidies(0)
+      }
+
       setTrips(tripsData)
       setStudents(studentsData)
     } catch (error) {
@@ -80,7 +104,7 @@ export default function TripStatusPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [selectedYear])
 
   useEffect(() => {
     fetchData()
@@ -105,16 +129,34 @@ export default function TripStatusPage() {
     return trip.costItems.reduce((sum, c) => sum + (c.perChild || 0), 0)
   }
 
-  // Summary: 체험학습비 총액 = sum of all students' per-child costs across all trips
-  const totalTripCost = useMemo(() => {
-    return students.reduce((total, student) => {
-      const studentSum = filteredTrips.reduce(
-        (sum, trip) => sum + getStudentTripCost(student.id, trip),
-        0
-      )
-      return total + studentSum
-    }, 0)
-  }, [filteredTrips, students])
+  // Summary calculations
+  const totalCost = useMemo(() => {
+    return filteredTrips.reduce((sum, t) =>
+      sum + t.costItems.reduce((s, c) => s + (c.total || 0), 0), 0)
+  }, [filteredTrips])
+
+  const totalParentPayment = useMemo(() => {
+    return filteredTrips.reduce((sum, t) => sum + (t.parentPayment || 0), 0)
+  }, [filteredTrips])
+
+  const totalFundAllocation = useMemo(() => {
+    return filteredTrips.reduce((sum, t) =>
+      sum + (t.fundAllocations || []).reduce((s, f) => s + f.amount, 0), 0)
+  }, [filteredTrips])
+
+  // 사업비 잔액: 연간 총 지원금 - 해당 연도 전체 trips의 사업비 배정 합계
+  const yearTrips = useMemo(() => {
+    return trips.filter((t) => {
+      if (!t.date) return false
+      return parseInt(t.date.substring(0, 4)) === selectedYear
+    })
+  }, [trips, selectedYear])
+
+  const fundBalance = useMemo(() => {
+    const yearAllocated = yearTrips.reduce((sum, t) =>
+      sum + (t.fundAllocations || []).reduce((s, f) => s + f.amount, 0), 0)
+    return totalSubsidies - yearAllocated
+  }, [yearTrips, totalSubsidies])
 
   // Year options for select
   const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i)
@@ -168,11 +210,24 @@ export default function TripStatusPage() {
             </Button>
           </div>
 
-          {/* Summary Card */}
-          <div className="flex gap-6">
+          {/* Summary Cards */}
+          <div className="flex gap-4 flex-wrap">
             <SummaryCard
-              label="체험학습비 총액"
-              value={`₩ ${totalTripCost.toLocaleString()}`}
+              label="비용"
+              value={`₩ ${totalCost.toLocaleString()}`}
+            />
+            <SummaryCard
+              label="학부모 납부액"
+              value={`₩ ${totalParentPayment.toLocaleString()}`}
+            />
+            <SummaryCard
+              label="사업비"
+              value={`₩ ${totalFundAllocation.toLocaleString()}`}
+            />
+            <SummaryCard
+              label="사업비 잔액 (연간)"
+              value={`₩ ${fundBalance.toLocaleString()}`}
+              color={fundBalance >= 0 ? "#2563EB" : "#E83838"}
             />
           </div>
         </div>
