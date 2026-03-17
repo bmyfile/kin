@@ -80,22 +80,35 @@ function TripModal({
       items[i][field] = num
       if (field === "total") {
         items[i].perChild = Math.round(num / participantCount)
+      } else if (field === "perChild") {
+        items[i].total = num * participantCount
       }
     }
     setCostItems(items)
   }
 
-  const toggleStudent = (id: string) => {
-    setSelectedStudents((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+  const recalcPerChild = (count: number) => {
+    const c = count || 1
+    setCostItems((prev) =>
+      prev.map((item) => ({ ...item, perChild: Math.round(item.total / c) }))
     )
+  }
+
+  const toggleStudent = (id: string) => {
+    setSelectedStudents((prev) => {
+      const next = prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+      recalcPerChild(next.length)
+      return next
+    })
   }
 
   const toggleAll = () => {
     if (selectedStudents.length === students.length) {
       setSelectedStudents([])
+      recalcPerChild(0)
     } else {
       setSelectedStudents(students.map((s) => s.id))
+      recalcPerChild(students.length)
     }
   }
 
