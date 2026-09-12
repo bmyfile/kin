@@ -6,6 +6,7 @@ import { collection, doc, getDoc, getDocs } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { AppLayout } from "@/components/layout/app-layout"
 import { exportTripStatusExcel } from "@/lib/trip-status-excel"
+import { isInAcademicYear, academicHalfOf } from "@/lib/academic-year"
 import { Download } from "lucide-react"
 
 // ── Types ────────────────────────────────────────────
@@ -110,17 +111,15 @@ export default function TripStatusPage() {
     fetchData()
   }, [fetchData])
 
-  // Filter trips by selected period and fund category
+  // Filter trips by academic year (3월~다음년도 2월), half (3~8월/9~2월) and fund category
   const filteredTrips = useMemo(() => {
     return trips.filter((t) => {
       if (!t.date) return false
-      const year = parseInt(t.date.substring(0, 4))
-      const month = parseInt(t.date.substring(5, 7))
-      if (year !== selectedYear) return false
+      if (!isInAcademicYear(t.date, selectedYear)) return false
       if (selectedHalf === "상반기") {
-        if (month < 1 || month > 6) return false
+        return academicHalfOf(t.date) === "상반기"
       } else if (selectedHalf === "하반기") {
-        if (month < 7 || month > 12) return false
+        return academicHalfOf(t.date) === "하반기"
       }
       if (selectedFund !== "전체") {
         return (t.fundAllocations || []).some((f) => f.category === selectedFund)
@@ -160,7 +159,7 @@ export default function TripStatusPage() {
   const yearTrips = useMemo(() => {
     return trips.filter((t) => {
       if (!t.date) return false
-      return parseInt(t.date.substring(0, 4)) === selectedYear
+      return isInAcademicYear(t.date, selectedYear)
     })
   }, [trips, selectedYear])
 

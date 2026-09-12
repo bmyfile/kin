@@ -9,6 +9,7 @@ import { Plus, X, Trash2 } from "lucide-react"
 import { collection, addDoc, getDocs, getDoc, deleteDoc, doc, updateDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { AppLayout } from "@/components/layout/app-layout"
+import { isInAcademicYear, academicYearOf } from "@/lib/academic-year"
 
 // ── Types ────────────────────────────────────────────
 type CostItem = { name: string; total: number; perChild: number }
@@ -65,11 +66,11 @@ function TripModal({
     }
   }, [open, trip])
 
-  // Fetch fund categories and balances based on trip date year
+  // Fetch fund categories and balances based on trip date's academic year
   useEffect(() => {
     if (!open) return
-    const year = date ? new Date(date).getFullYear() : new Date().getFullYear()
-    if (isNaN(year)) return
+    const year = date ? academicYearOf(date) : new Date().getFullYear()
+    if (year === null) return
     const fundsDocId = `funds-${year}`
     getDoc(doc(db, "funds", fundsDocId)).then((snap) => {
       if (snap.exists()) {
@@ -85,7 +86,7 @@ function TripModal({
           for (const t of trips) {
             if (trip && t.id === trip.id) continue
             if (!t.date) continue
-            if (new Date(t.date).getFullYear() !== year) continue
+            if (!isInAcademicYear(t.date, year)) continue
             for (const alloc of t.fundAllocations || []) {
               if (alloc.category === cat) totalAllocated += alloc.amount
             }

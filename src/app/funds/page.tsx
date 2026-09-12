@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { collection, doc, getDocs, setDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { AppLayout } from "@/components/layout/app-layout"
+import { isInAcademicYear, academicYearMonths } from "@/lib/academic-year"
 import { Plus, X } from "lucide-react"
 
 // ── Types ────────────────────────────────────────────
@@ -44,6 +45,7 @@ function CellDetailModal({
   isOpen,
   onClose,
   month,
+  monthLabel,
   category,
   tripDetails,
   totalAmount,
@@ -53,6 +55,7 @@ function CellDetailModal({
   isOpen: boolean
   onClose: () => void
   month: number
+  monthLabel: string
   category: string
   tripDetails: CellTripDetail[]
   totalAmount: number
@@ -70,7 +73,7 @@ function CellDetailModal({
       <div className="bg-white rounded-xl shadow-xl w-[480px] p-8 flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-[#333]">
-            {month}월 - {category}
+            {monthLabel} - {category}
           </h3>
           <button onClick={onClose} className="text-[#9DA4B3] hover:text-[#333] cursor-pointer">
             <X className="w-5 h-5" />
@@ -242,7 +245,7 @@ export default function FundsPage() {
       }))
       setTrips(allTrips.filter((t) => {
         if (!t.date) return false
-        return new Date(t.date).getFullYear() === selectedYear
+        return isInAcademicYear(t.date, selectedYear)
       }))
     } catch (err) {
       console.error("Error fetching funds:", err)
@@ -354,10 +357,11 @@ export default function FundsPage() {
   }
 
   const getCategoryHalfTotal = (cat: string, half: "상반기" | "하반기") => {
+    // 학사 연도 기준: 상반기 3~8월, 하반기 9월~다음년도 2월
     let sum = 0
-    const start = half === "상반기" ? 1 : 7
-    const end = half === "상반기" ? 6 : 12
-    for (let m = start; m <= end; m++) sum += getAmount(m, cat)
+    for (const m of academicYearMonths()) {
+      if ((half === "상반기") === (m >= 3 && m <= 8)) sum += getAmount(m, cat)
+    }
     return sum
   }
 
@@ -460,11 +464,11 @@ export default function FundsPage() {
                   </tr>
                 ) : (
                   <>
-                    {/* Monthly rows 1~12 */}
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                    {/* Monthly rows — 학사 연도 순서 (3월 ~ 다음년도 2월) */}
+                    {academicYearMonths().map((month) => (
                       <tr key={month} className="border-b border-[#E1E2E5]">
-                        <td className="text-center text-sm text-[#333] bg-[#F9F9F9] border-r border-[#E1E2E5] w-[60px] h-[48px]">
-                          {month}
+                        <td className="text-center text-sm text-[#333] bg-[#F9F9F9] border-r border-[#E1E2E5] w-[60px] h-[48px] whitespace-nowrap">
+                          {month >= 3 ? `${month}월` : `${month}월 ('${String(selectedYear + 1).slice(2)})`}
                         </td>
                         {categories.map((cat) => {
                           const amount = getAmount(month, cat)
@@ -635,6 +639,7 @@ export default function FundsPage() {
           isOpen={cellModalOpen}
           onClose={() => setCellModalOpen(false)}
           month={cellModalMonth}
+          monthLabel={cellModalMonth >= 3 ? `${cellModalMonth}월` : `${selectedYear + 1}년 ${cellModalMonth}월`}
           category={cellModalCat}
           tripDetails={cellTripDetails[`${cellModalMonth}-${cellModalCat}`] || []}
           totalAmount={getAmount(cellModalMonth, cellModalCat)}
