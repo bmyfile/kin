@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { collection, doc, getDoc, getDocs } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { AppLayout } from "@/components/layout/app-layout"
+import { exportTripStatusExcel } from "@/lib/trip-status-excel"
+import { Download } from "lucide-react"
 
 // ── Types ────────────────────────────────────────────
 type CostItem = { name: string; total: number; perChild: number }
@@ -46,13 +48,15 @@ function SummaryCard({
 export default function TripStatusPage() {
   const [trips, setTrips] = useState<Trip[]>([])
   const [students, setStudents] = useState<Student[]>([])
-  const [totalSubsidies, setTotalSubsidies] = useState(0)
   const [loading, setLoading] = useState(true)
 
   // Filters
   const currentYear = new Date().getFullYear()
   const [selectedYear, setSelectedYear] = useState(currentYear)
   const [selectedHalf, setSelectedHalf] = useState<"상반기" | "하반기" | "상하반기">("상반기")
+  const [selectedFund, setSelectedFund] = useState("전체")
+  const [fundCategories, setFundCategories] = useState<string[]>([])
+  const [subsidiesMap, setSubsidiesMap] = useState<{ [cat: string]: number }>({})
 
   const fetchData = useCallback(async () => {
     try {
@@ -83,18 +87,14 @@ export default function TripStatusPage() {
       }))
       studentsData.sort((a, b) => a.name.localeCompare(b.name))
 
-      // Total subsidies from funds doc (only for known categories)
+      // Fund categories & subsidies from funds doc
       if (fundsSnap.exists()) {
         const data = fundsSnap.data()
-        const cats: string[] = data.categories || []
-        const subs = data.subsidies || {}
-        let total = 0
-        for (const cat of cats) {
-          total += Number(subs[cat]) || 0
-        }
-        setTotalSubsidies(total)
+        setFundCategories(data.categories || [])
+        setSubsidiesMap(data.subsidies || {})
       } else {
-        setTotalSubsidies(0)
+        setFundCategories([])
+        setSubsidiesMap({})
       }
 
       setTrips(tripsData)
@@ -110,18 +110,24 @@ export default function TripStatusPage() {
     fetchData()
   }, [fetchData])
 
-  // Filter trips by selected period
+  // Filter trips by selected period and fund category
   const filteredTrips = useMemo(() => {
     return trips.filter((t) => {
       if (!t.date) return false
       const year = parseInt(t.date.substring(0, 4))
       const month = parseInt(t.date.substring(5, 7))
       if (year !== selectedYear) return false
-      if (selectedHalf === "상하반기") return true
-      if (selectedHalf === "상반기") return month >= 1 && month <= 6
-      return month >= 7 && month <= 12
+      if (selectedHalf === "상반기") {
+        if (month < 1 || month > 6) return false
+      } else if (selectedHalf === "하반기") {
+        if (month < 7 || month > 12) return false
+      }
+      if (selectedFund !== "전체") {
+        return (t.fundAllocations || []).some((f) => f.category === selectedFund)
+      }
+      return true
     })
-  }, [trips, selectedYear, selectedHalf])
+  }, [trips, selectedYear, selectedHalf, selectedFund])
 
   // Calculate per-student costs for each trip
   const getStudentTripCost = (studentId: string, trip: Trip) => {
@@ -141,10 +147,16 @@ export default function TripStatusPage() {
 
   const totalFundAllocation = useMemo(() => {
     return filteredTrips.reduce((sum, t) =>
-      sum + (t.fundAllocations || []).reduce((s, f) => s + f.amount, 0), 0)
-  }, [filteredTrips])
+      sum + (t.fundAllocations || []).reduce((s, f) =>
+        s + (selectedFund === "전체" || f.category === selectedFund ? f.amount : 0), 0), 0)
+  }, [filteredTrips, selectedFund])
 
-  // 사업비 잔액: 연간 총 지원금 - 해당 연도 전체 trips의 사업비 배정 합계
+  // 사업비 잔액: 연간 지원금 - 해당 연도 전체 trips의 사업비 배정 합계 (사업비 필터 선택 시 해당 사업비 기준)
+  // 지원금 합계는 등록된 카테고리만 계산 (subsidies에 삭제된 항목의 잔여 키가 남아있을 수 있음)
+  const totalSubsidies = useMemo(() => {
+    return fundCategories.reduce((s, cat) => s + (Number(subsidiesMap[cat]) || 0), 0)
+  }, [fundCategories, subsidiesMap])
+
   const yearTrips = useMemo(() => {
     return trips.filter((t) => {
       if (!t.date) return false
@@ -154,12 +166,42 @@ export default function TripStatusPage() {
 
   const fundBalance = useMemo(() => {
     const yearAllocated = yearTrips.reduce((sum, t) =>
-      sum + (t.fundAllocations || []).reduce((s, f) => s + f.amount, 0), 0)
-    return totalSubsidies - yearAllocated
-  }, [yearTrips, totalSubsidies])
+      sum + (t.fundAllocations || []).reduce((s, f) =>
+        s + (selectedFund === "전체" || f.category === selectedFund ? f.amount : 0), 0), 0)
+    const subsidyTotal = selectedFund === "전체"
+      ? totalSubsidies
+      : Number(subsidiesMap[selectedFund]) || 0
+    return subsidyTotal - yearAllocated
+  }, [yearTrips, totalSubsidies, subsidiesMap, selectedFund])
 
   // Year options for select
   const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i)
+
+  // Excel download
+  const [exporting, setExporting] = useState(false)
+  const handleExcelDownload = async () => {
+    setExporting(true)
+    try {
+      await exportTripStatusExcel({
+        year: selectedYear,
+        half: selectedHalf,
+        fund: selectedFund,
+        trips: filteredTrips,
+        students,
+        summary: {
+          cost: totalCost,
+          parentPayment: totalParentPayment,
+          fundAllocation: totalFundAllocation,
+          fundBalance,
+        },
+      })
+    } catch (e) {
+      console.error("Excel export failed:", e)
+      alert("엑셀 다운로드 중 오류가 발생했습니다.")
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <AppLayout>
@@ -178,7 +220,10 @@ export default function TripStatusPage() {
               <span className="text-xs text-[#9DA4B3]">교차 연도</span>
               <select
                 value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                onChange={(e) => {
+                  setSelectedYear(Number(e.target.value))
+                  setSelectedFund("전체")
+                }}
                 className="h-10 px-4 border border-[#E1E2E5] bg-white text-sm text-[#333] focus:outline-none cursor-pointer"
               >
                 {yearOptions.map((y) => (
@@ -200,6 +245,21 @@ export default function TripStatusPage() {
                 <option value="상하반기">상하반기</option>
               </select>
             </div>
+            <div className="flex flex-col gap-[6px]">
+              <span className="text-xs text-[#9DA4B3]">사업비</span>
+              <select
+                value={selectedFund}
+                onChange={(e) => setSelectedFund(e.target.value)}
+                className="h-10 px-4 border border-[#E1E2E5] bg-white text-sm text-[#333] focus:outline-none cursor-pointer"
+              >
+                <option value="전체">전체</option>
+                {fundCategories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Button
               type="button"
               variant="outline"
@@ -207,6 +267,16 @@ export default function TripStatusPage() {
               onClick={fetchData}
             >
               조회
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 px-4 text-sm rounded-none border-[#E1E2E5] text-[#333] cursor-pointer"
+              onClick={handleExcelDownload}
+              disabled={exporting || loading}
+            >
+              <Download className="w-4 h-4" />
+              {exporting ? "저장 중..." : "엑셀 다운로드"}
             </Button>
           </div>
 
@@ -225,7 +295,7 @@ export default function TripStatusPage() {
               value={`₩ ${totalFundAllocation.toLocaleString()}`}
             />
             <SummaryCard
-              label="사업비 잔액 (연간)"
+              label={selectedFund === "전체" ? "사업비 잔액 (연간)" : `사업비 잔액 (연간) · ${selectedFund}`}
               value={`₩ ${fundBalance.toLocaleString()}`}
               color={fundBalance >= 0 ? "#2563EB" : "#E83838"}
             />
