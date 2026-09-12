@@ -116,11 +116,9 @@ export default function TripStatusPage() {
     return trips.filter((t) => {
       if (!t.date) return false
       if (!isInAcademicYear(t.date, selectedYear)) return false
-      if (selectedHalf === "상반기") {
-        return academicHalfOf(t.date) === "상반기"
-      } else if (selectedHalf === "하반기") {
-        return academicHalfOf(t.date) === "하반기"
-      }
+      const half = academicHalfOf(t.date)
+      if (selectedHalf === "상반기" && half !== "상반기") return false
+      if (selectedHalf === "하반기" && half !== "하반기") return false
       if (selectedFund !== "전체") {
         return (t.fundAllocations || []).some((f) => f.category === selectedFund)
       }
